@@ -1,6 +1,9 @@
 import csv
 import os, sys
 import json
+from datetime import datetime
+import re
+from pytz import timezone,utc
 
 FOLDER_SPEC = "folder_spec.csv"
 
@@ -35,6 +38,16 @@ class SeedTweetsAnalyzer():
     def __init__(self, seed_tweets_folder):
         self.seed_tweets_folder = seed_tweets_folder
         self.error_instance = 0
+
+    def _get_tweet_from_json(self, json_obj):
+        if "full_text" in json_obj.keys():
+            text = json_obj["full_text"].lower()
+        else:
+            text = json_obj["text"].lower()
+
+        text = re.sub(('\s\s+|\n'), ' ',text)
+
+        return text
 
     def get_seed_users(self):
         seed_users = set([])
@@ -91,6 +104,60 @@ class SeedTweetsAnalyzer():
         return filtered_users
 
 
+    def transform_json_into_csv(self, file_name):
+        users = []
+
+        tweets_file = open("tweets.csv","w",encoding="utf8",newline="")
+        users_file = open("users.csv","w",encoding="utf8",newline="")
+
+        ctwriter = csv.writer(tweets_file)
+        cuwriter = csv.writer(users_file)
+
+        ctwriter.writerow(["status_id","date_sgtime","text","is_a_retweet","retweets","likes","user_id"])
+        cuwriter.writerow(["user_id","user_name","user_location","followers","followees","tweets","favourites","lists","created_at_sgtime"])
+
+        with open("collected_tweets.json","r",encoding="utf8") as reader:
+            for line in reader.readlines():
+                jtweet = json.loads(line)
+                is_a_retweet = False
+
+                status_id = jtweet["id_str"]
+
+                if "retweeted_status" in jtweet.keys():
+                    text = self._get_tweet_from_json(jtweet["retweeted_status"])
+                    is_a_retweet = True
+                else:
+                    text = self._get_tweet_from_json(jtweet)
+
+                created_at = datetime.strptime(jtweet["created_at"], "%a %b %d %H:%M:%S %z %Y")
+                created_at = created_at.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
+                date_str = created_at.strftime("%Y-%m-%d %H:%M:%S")
+                retweets = jtweet["retweet_count"]
+                likes = jtweet["favorite_count"]
+                user_id = jtweet["user"]["id"]
+
+                ctwriter.writerow([status_id, date_str, text, is_a_retweet, retweets, likes, user_id])
+                tweets_file.flush()
+
+                if user_id not in users:
+                    user_name = jtweet["user"]["screen_name"]
+                    location = jtweet["user"]["location"] if "location" in jtweet["user"].keys() else ""
+                    followers = jtweet["user"]["followers_count"]
+                    friends = jtweet["user"]["friends_count"]
+                    tweets = jtweet["user"]["statuses_count"]
+                    favourites = jtweet["user"]["favourites_count"]
+                    lists = jtweet["user"]["listed_count"]
+                    created_at = datetime.strptime(jtweet["user"]["created_at"], "%a %b %d %H:%M:%S %z %Y")
+                    created_at = created_at.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
+                    created_at = created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+                    cuwriter.writerow([user_id,user_name,location,followers,friends,tweets,favourites,lists,created_at])
+                    users_file.flush()
+                    users.append(user_id)
+
+        tweets_file.close()
+        users_file.close()
+
 class SeedUsersAnalyzer():
     def __init__(self, seed_users_folder):
         self.seed_users_folder = seed_users_folder
@@ -100,6 +167,7 @@ class SeedUsersAnalyzer():
             text = json_obj["full_text"].lower()
         else:
             text = json_obj["text"].lower()
+
 
         return text
 
@@ -126,8 +194,9 @@ class SeedUsersAnalyzer():
 if __name__ == "__main__":
     folder_specs = get_folder_spec()
 
-    '''sta = SeedTweetsAnalyzer(folder_specs["seed tweets"])
-    #requirements = {"location": "singapore", "followers": [10, float("inf")], "verified": False}
+    sta = SeedTweetsAnalyzer(folder_specs["seed tweets"])
+
+    ''''#requirements = {"location": "singapore", "followers": [10, float("inf")], "verified": False}
     requirements = {"protected": False}
     seed_users = sta.get_seed_users()
     filtered_users = sta.filter_seed_users(requirements)
@@ -135,5 +204,7 @@ if __name__ == "__main__":
     with open('seed_user_ids.txt', 'w') as f:
         f.write('\n'.join(user_ids))'''
 
-    sua = SeedUsersAnalyzer(folder_specs["seed users"])
-    sua.collect_tweets_with_phrase("#sgunited")
+    sta.transform_json_into_csv("collected_tweets.json")
+
+    '''sua = SeedUsersAnalyzer(folder_specs["seed users"])
+    sua.collect_tweets_with_phrase("#sgunited")'''
