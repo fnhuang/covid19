@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import re
 from pytz import timezone,utc
+from nltk import word_tokenize
 
 FOLDER_SPEC = "folder_spec.csv"
 
@@ -38,6 +39,18 @@ class SeedTweetsAnalyzer():
     def __init__(self, seed_tweets_folder):
         self.seed_tweets_folder = seed_tweets_folder
         self.error_instance = 0
+
+
+    def _get_rt_status_if_retweeted(self, jtweet):
+        is_a_retweet = False
+
+        if "retweeted_status" in jtweet.keys():
+            text = self._get_tweet_from_json(jtweet["retweeted_status"])
+            is_a_retweet = True
+        else:
+            text = self._get_tweet_from_json(jtweet)
+
+        return is_a_retweet,text
 
     def _get_tweet_from_json(self, json_obj):
         if "full_text" in json_obj.keys():
@@ -103,8 +116,7 @@ class SeedTweetsAnalyzer():
 
         return filtered_users
 
-
-    def transform_json_into_csv(self, file_name):
+    def transform_filtered_tweets_into_csv(self, file_name):
         users = []
 
         tweets_file = open("tweets.csv","w",encoding="utf8",newline="")
@@ -123,11 +135,7 @@ class SeedTweetsAnalyzer():
 
                 status_id = jtweet["id_str"]
 
-                if "retweeted_status" in jtweet.keys():
-                    text = self._get_tweet_from_json(jtweet["retweeted_status"])
-                    is_a_retweet = True
-                else:
-                    text = self._get_tweet_from_json(jtweet)
+                is_a_retweet,text = self._get_rt_status_if_retweeted(jtweet)
 
                 created_at = datetime.strptime(jtweet["created_at"], "%a %b %d %H:%M:%S %z %Y")
                 created_at = created_at.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
@@ -157,6 +165,53 @@ class SeedTweetsAnalyzer():
 
         tweets_file.close()
         users_file.close()
+
+
+    # remove www
+    def _remove_link(self,text):
+        words = text.split(" ")
+        valid_words = []
+
+        for w in words:
+            if not w.startswith("http") and not w.startswith("https") and not w.startswith("www"):
+                valid_words.append(w)
+
+        return " ".join(valid_words)
+
+
+    # perform tokenization
+    def _tokenize(self, text):
+        words = word_tokenize(text)
+
+        return " ".join(words)
+
+
+    def transform_filtered_tweets_as_TLDA_input(self, result_folder):
+        dtweet = {}
+
+        # separate tweets based on dates
+        with open("collected_tweets.json","r",encoding="utf8") as reader:
+            for line in reader.readlines():
+                jtweet = json.loads(line)
+
+                dat = datetime.strptime(jtweet["created_at"], "%a %b %d %H:%M:%S %z %Y")
+                dat = dat.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
+                dat = dat.strftime("%Y-%m-%d")
+
+                is_a_retweet,text = self._get_rt_status_if_retweeted(jtweet)
+                dtweet[dat] = dtweet.get(dat, [])
+                dtweet[dat].append(text)
+
+        # perform basic text processing, and transform into a file
+        for datstr in dtweet.keys():
+            with open(f"{result_folder}/{datstr}.txt","w", encoding="utf8") as writer:
+                for tweet in dtweet[datstr]:
+                    tweet = self._remove_link(tweet)
+                    toktweet = self._tokenize(tweet)
+                    writer.write(f"{toktweet}\n")
+                    writer.flush()
+
+
 
 class SeedUsersAnalyzer():
     def __init__(self, seed_users_folder):
@@ -204,7 +259,9 @@ if __name__ == "__main__":
     with open('seed_user_ids.txt', 'w') as f:
         f.write('\n'.join(user_ids))'''
 
-    sta.transform_json_into_csv("collected_tweets.json")
+    #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
+
+    sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
 
     '''sua = SeedUsersAnalyzer(folder_specs["seed users"])
     sua.collect_tweets_with_phrase("#sgunited")'''
