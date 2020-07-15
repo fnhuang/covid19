@@ -199,10 +199,11 @@ class SeedTweetsAnalyzer():
                 dat = dat.strftime("%Y-%m-%d")
 
                 is_a_retweet,text = self._get_rt_status_if_retweeted(jtweet)
-                dtweet[dat] = dtweet.get(dat, [])
+                dtweet[dat] = dtweet.get(dat,[])
                 dtweet[dat].append(text)
 
         # perform basic text processing, and transform into a file
+        flis_writer = open("filelist.txt","w",encoding="utf8")
         for datstr in dtweet.keys():
             with open(f"{result_folder}/{datstr}.txt","w", encoding="utf8") as writer:
                 for tweet in dtweet[datstr]:
@@ -210,6 +211,9 @@ class SeedTweetsAnalyzer():
                     toktweet = self._tokenize(tweet)
                     writer.write(f"{toktweet}\n")
                     writer.flush()
+                flis_writer.write(f"{datstr}.txt\n")
+                flis_writer.flush()
+        flis_writer.close()
 
 
 
@@ -251,17 +255,17 @@ if __name__ == "__main__":
 
     sta = SeedTweetsAnalyzer(folder_specs["seed tweets"])
 
-    ''''#requirements = {"location": "singapore", "followers": [10, float("inf")], "verified": False}
-    requirements = {"protected": False}
+    #requirements = {"location": "singapore", "followers": [10, float("inf")], "verified": False}
+    '''requirements = {"protected": False}
     seed_users = sta.get_seed_users()
     filtered_users = sta.filter_seed_users(requirements)
     user_ids = [u.id for u in filtered_users]
     with open('seed_user_ids.txt', 'w') as f:
         f.write('\n'.join(user_ids))'''
 
-    #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
+    sta.transform_filtered_tweets_into_csv("collected_tweets.json")
 
     sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
 
-    '''sua = SeedUsersAnalyzer(folder_specs["seed users"])
-    sua.collect_tweets_with_phrase("#sgunited")'''
+    #sua = SeedUsersAnalyzer(folder_specs["seed users"])
+    #sua.collect_tweets_with_phrase("#sgunited")
