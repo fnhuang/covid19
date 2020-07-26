@@ -4,7 +4,9 @@ import json
 from datetime import datetime
 import re
 from pytz import timezone,utc
-from nltk import word_tokenize
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+import math, statistics, string
 
 FOLDER_SPEC = "folder_spec.csv"
 
@@ -34,6 +36,91 @@ class TwitterUser():
 
     def __hash__(self):
         return hash(self.id)
+
+class TopicAnalyzer():
+    def __init__(self, home_folder):
+        self.home_folder = home_folder
+        self.data_folder = ""
+        self.topic_folder = ""
+
+    def _calculate_umass(self, word1, word2):
+        w1count = 0 #total w1 in all tweets
+        w2count = 0 #total w2 in all tweets
+        w1w2count = 0 #total w1 w2 appearing together in all tweets
+
+        total_tweets = 0
+
+        for file in os.listdir(self.data_folder):
+            with open(f"{self.data_folder}/{file}", "r", encoding="utf8") as reader:
+                lines = reader.readlines()
+                #for each tweet
+                for line in lines:
+                    vals = line.split(" ")
+
+                    #if w1 exists in a tweet
+                    if word1 in vals:
+                        w1count += 1
+                        #if w1 & w2 exists in a tweet
+                        if word2 in vals:
+                            w2count += 1
+                            w1w2count += 1
+                    #if only w2 exists
+                    elif word2 in vals:
+                        w2count += 1
+
+
+        score = 0
+        denom = max(w1count, w2count)
+        if denom > 0:
+            score = math.log((w1w2count + 1) / denom)
+
+        return score
+
+    def analyze_coherence_score_of_files(self, topic_folder, data_folder):
+        self.topic_folder = f"{self.home_folder}/{topic_folder}"
+        self.data_folder = f"{self.home_folder}/{data_folder}"
+
+        #a file represents topic-word distribution for a number of topic
+        for file in os.listdir(self.topic_folder):
+            topic_index = -1
+            topic2words = {}
+
+            full_path = f"{self.topic_folder}/{file}"
+            with open(full_path, "r") as reader:
+                lines = reader.readlines()
+                for line in lines:
+                    words = line.strip().split("\t")
+
+                    if "Topic " in line:
+                        topic_index += 1
+                        topic2words[topic_index] = [words[1]]
+                    else:
+                        if len(topic2words[topic_index]) < 20:
+                            topic2words[topic_index].append(words[0])
+
+            #print(file, topic2words)
+            #sys.exit()
+
+            scores = []
+            for topic in topic2words.keys():
+                words = topic2words[topic]
+                #print("topic",topic)
+
+                #umass score for each topic
+                total_score = 0
+                for i in range(0, len(words)-1):
+                    for j in range (i+1, len(words)):
+                        word1 = words[i]
+                        word2 = words[j]
+                        total_score += self._calculate_umass(word1, word2)
+
+                scores.append(total_score)
+
+            mean_uci = statistics.mean(scores)
+            print(f"{str(len(topic2words))},{mean_uci}")
+
+
+
 
 class SeedTweetsAnalyzer():
     def __init__(self, seed_tweets_folder):
@@ -180,10 +267,21 @@ class SeedTweetsAnalyzer():
 
 
     # perform tokenization
-    def _tokenize(self, text):
+    def _basic_preprocess(self, text):
+        #tokenize and remove stopwords
+
         words = word_tokenize(text)
 
-        return " ".join(words)
+        # step 1: remove stopwords
+        stop_removed = [w for w in words if w not in set(stopwords.words('english'))]
+
+        # step 2: remove punctuations
+        punct_removed = [w for w in stop_removed if w not in string.punctuation]
+
+        # step 3: remove digits
+        digit_removed = [w for w in punct_removed if not w.isdigit()]
+
+        return " ".join(digit_removed)
 
 
     def transform_filtered_tweets_as_TLDA_input(self, result_folder):
@@ -263,9 +361,12 @@ if __name__ == "__main__":
     with open('seed_user_ids.txt', 'w') as f:
         f.write('\n'.join(user_ids))'''
 
-    sta.transform_filtered_tweets_into_csv("collected_tweets.json")
+    #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
 
     sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
 
     #sua = SeedUsersAnalyzer(folder_specs["seed users"])
     #sua.collect_tweets_with_phrase("#sgunited")
+
+    #ta = TopicAnalyzer("C:\\Users\\fnatali\\eclipse-workspace\\Twitter-LDA-master\\data")
+    #ta.analyze_coherence_score_of_files("ModelRes/sgu", "Data4Model/sgunited")
