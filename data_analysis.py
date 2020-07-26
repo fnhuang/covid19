@@ -283,7 +283,13 @@ class SeedTweetsAnalyzer():
         regex = re.compile('[^a-zA-Z]')
         nonalph_removed = [regex.sub('', w) for w in punct_removed]
 
-        return " ".join(nonalph_removed)
+        #step 4: remove empty words
+        cleaned = [w for w in nonalph_removed if w != ""]
+
+        if len(cleaned) > 0:
+            return " ".join(cleaned)
+        else:
+            return ""
 
 
     def transform_filtered_tweets_as_TLDA_input(self, result_folder):
@@ -309,8 +315,9 @@ class SeedTweetsAnalyzer():
                 for tweet in dtweet[datstr]:
                     tweet = self._remove_link(tweet)
                     toktweet = self._basic_preprocess(tweet)
-                    writer.write(f"{toktweet}\n")
-                    writer.flush()
+                    if len(toktweet) > 0:
+                        writer.write(f"{toktweet}\n")
+                        writer.flush()
                 flis_writer.write(f"{datstr}.txt\n")
                 flis_writer.flush()
         flis_writer.close()
