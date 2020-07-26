@@ -8,6 +8,7 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 import math, statistics, string
 
+
 FOLDER_SPEC = "folder_spec.csv"
 
 def get_folder_spec():
@@ -278,10 +279,11 @@ class SeedTweetsAnalyzer():
         # step 2: remove punctuations
         punct_removed = [w for w in stop_removed if w not in string.punctuation]
 
-        # step 3: remove digits
-        digit_removed = [w for w in punct_removed if not w.isdigit()]
+        # step 3: remove non-alphabet
+        regex = re.compile('[^a-zA-Z]')
+        nonalph_removed = [regex.sub('', w) for w in punct_removed]
 
-        return " ".join(digit_removed)
+        return " ".join(nonalph_removed)
 
 
     def transform_filtered_tweets_as_TLDA_input(self, result_folder):
