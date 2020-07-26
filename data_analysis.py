@@ -306,7 +306,7 @@ class SeedTweetsAnalyzer():
             with open(f"{result_folder}/{datstr}.txt","w", encoding="utf8") as writer:
                 for tweet in dtweet[datstr]:
                     tweet = self._remove_link(tweet)
-                    toktweet = self._tokenize(tweet)
+                    toktweet = self._basic_preprocess(tweet)
                     writer.write(f"{toktweet}\n")
                     writer.flush()
                 flis_writer.write(f"{datstr}.txt\n")
