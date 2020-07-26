@@ -284,7 +284,7 @@ class SeedTweetsAnalyzer():
         nonalph_removed = [regex.sub('', w) for w in punct_removed]
 
         #step 4: remove empty words
-        cleaned = [w for w in nonalph_removed if w != ""]
+        cleaned = [w for w in nonalph_removed if w != "" and len(w) > 1]
 
         if len(cleaned) > 0:
             return " ".join(cleaned)
