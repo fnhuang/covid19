@@ -39,10 +39,11 @@ class TwitterUser():
         return hash(self.id)
 
 class TopicAnalyzer():
-    def __init__(self, home_folder):
+    def __init__(self, home_folder, topic_folder, data_folder):
         self.home_folder = home_folder
-        self.data_folder = ""
-        self.topic_folder = ""
+        self.topic_folder = f"{self.home_folder}/ModelRes/{topic_folder}"
+        self.data_folder = f"{self.home_folder}/Data4Model/{data_folder}"
+
 
     def _calculate_umass(self, word1, word2):
         w1count = 0 #total w1 in all tweets
@@ -77,16 +78,179 @@ class TopicAnalyzer():
 
         return score
 
-    def analyze_coherence_score_of_files(self, topic_folder, data_folder):
-        self.topic_folder = f"{self.home_folder}/{topic_folder}"
-        self.data_folder = f"{self.home_folder}/{data_folder}"
+    def write_top30_words(self):
+        wit_file = f"{self.topic_folder}/WordsInTopics.txt"
+
+        writer = open(f"{self.topic_folder}/WordsInTopicsSum.txt", "w", )
+
+        with open(wit_file, "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+
+
+
+            for line in lines:
+                if "Topic" in line:
+                    index = 0
+
+                if index < 30:
+                    writer.write(f"{line}")
+                    writer.flush()
+                    index += 1
+
+
+        writer.close()
+
+
+
+
+    def prepare_file_for_ldavis(self):
+        self.write_phi()
+        self.write_theta()
+        self.write_doc_length()
+        self.write_vocab()
+        self.write_term_frequency()
+
+    def write_term_frequency(self):
+        word_file = f"{self.topic_folder}/wordMap.txt"
+
+        vocab_file = f"{self.topic_folder}/term_frequency.txt"
+        writer = open(vocab_file, "w", encoding="utf8")
+        with open(word_file, "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+            for line in lines:
+                w = line.split("\t")[1].strip()
+                writer.write(w)
+                writer.write("\n")
+                writer.flush()
+        writer.close()
+
+    def write_vocab(self):
+        word_file = f"{self.topic_folder}/wordMap.txt"
+
+        vocab_file = f"{self.topic_folder}/vocab.txt"
+        writer = open(vocab_file, "w", encoding="utf8")
+        with open(word_file,"r",encoding="utf8") as reader:
+            lines = reader.readlines()
+            for line in lines:
+                w = line.split("\t")[0].strip()
+                writer.write(w)
+                writer.write("\n")
+                writer.flush()
+        writer.close()
+
+
+    def write_doc_length(self):
+        file = f"{self.topic_folder}/TopicsDistributionOnUsers.txt"
+
+        doc_list = []
+        with open(file, "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+            for line in lines:
+                txt_index = line.index(".txt")
+                doc_list.append(line[0:txt_index + 4])
+
+        writer = open(f"{self.topic_folder}/doc_length.txt", "w", encoding="utf8")
+        for d in doc_list:
+            data_file = f"{self.data_folder}/{d}"
+            num_token = 0
+            with open(data_file, "r", encoding="utf8") as reader:
+                lines = reader.readlines()
+                for line in lines:
+                    num_token += len(line.split(" "))
+            writer.write(str(num_token))
+            writer.write("\n")
+            writer.flush()
+        writer.close()
+
+    def write_phi(self):
+        wordmap_file = f"{self.topic_folder}/wordMap.txt"
+
+        word_list = []
+        with open(wordmap_file,"r",encoding="utf8") as reader:
+            lines = reader.readlines()
+            for line in lines:
+                word_list.append(line.split("\t")[0].strip())
+
+        wit_file = f"{self.topic_folder}/WordsInTopics.txt"
+        topic_dist = {}
+
+        phi_file = f"{self.topic_folder}/phi.txt"
+        writer = open(phi_file,"w",encoding="utf8")
+
+        with open(wit_file, "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+
+            for line in lines:
+                data = line.strip().split("\t")
+
+                if len(data) > 2:
+                    if len(topic_dist) > 0:
+                        #write word distribution for the current topic into file
+                        total = sum(topic_dist.values())
+
+                        for i in range(0, len(word_list)):
+                            p = topic_dist[word_list[i]]
+
+                            writer.write(str(p))
+                            if i < len(word_list) - 1:
+                                writer.write("\t")
+                            else:
+                                writer.write("\n")
+                        writer.flush()
+
+                    #create dictionary for a new topic
+                    topic_dist = {}
+                    topic_dist[data[1]] = float(data[2])
+                else:
+                    topic_dist[data[0]] = float(data[1])
+
+        # write the last topic
+        for i in range(0, len(word_list)):
+            p = topic_dist[word_list[i]]
+            writer.write(str(p))
+            if i < len(word_list) - 1:
+                writer.write("\t")
+            else:
+                writer.write("\n")
+        writer.flush()
+
+        writer.close()
+
+
+    def write_theta(self):
+        file = f"{self.topic_folder}/TopicsDistributionOnUsers.txt"
+
+        with open(file, "r", encoding="utf8") as reader:
+            theta_file = f"{self.topic_folder}/theta.txt"
+            writer = open(theta_file,"w",encoding="utf8")
+
+            lines = reader.readlines()
+            for line in lines:
+                txt_index = line.index(".txt")
+                writer.write(line[txt_index + 5:])
+                writer.flush()
+
+            writer.close()
+
+    def count_number_of_unique_tweets(self):
+        all_texts = []
+        for file in os.listdir(self.data_folder):
+            with open(f"{self.data_folder}/{file}", "r", encoding="utf8") as reader:
+                lines = reader.readlines()
+                for line in lines:
+                    if line not in all_texts:
+                        all_texts.append(line)
+        print(len(all_texts))
+
+    def analyze_coherence_score_of_files(self, wits_folder):
+        wits_folder = f"{self.home_folder}/{wits_folder}"
 
         #a file represents topic-word distribution for a number of topic
-        for file in os.listdir(self.topic_folder):
+        for file in os.listdir(wits_folder):
             topic_index = -1
             topic2words = {}
 
-            full_path = f"{self.topic_folder}/{file}"
+            full_path = f"{wits_folder}/{file}"
             with open(full_path, "r") as reader:
                 lines = reader.readlines()
                 for line in lines:
@@ -204,6 +368,33 @@ class SeedTweetsAnalyzer():
 
         return filtered_users
 
+    def count_geocoded_tweets(self):
+
+        writer = open("geotweets.json", "w", encoding="utf8")
+
+        totaltweet = 0
+        sgtweet = 0
+        ovstweet = 0
+
+        with open("collected_tweets.json", "r", encoding="utf8") as reader:
+            for line in reader.readlines():
+                totaltweet += 1
+
+                jtweet = json.loads(line)
+                if jtweet["place"] != None:
+                    if jtweet["place"]["country_code"] == "SG":
+                        sgtweet += 1
+                    else:
+                        ovstweet += 1
+                    writer.write(line)
+                    writer.flush()
+        writer.close()
+
+        print("total tweet:", totaltweet)
+        print("SG tweet:", sgtweet)
+        print("ovs tweet:", ovstweet)
+
+
     def transform_filtered_tweets_into_csv(self, file_name):
         users = []
 
@@ -291,7 +482,6 @@ class SeedTweetsAnalyzer():
         else:
             return ""
 
-
     def transform_filtered_tweets_as_TLDA_input(self, result_folder):
         dtweet = {}
 
@@ -371,11 +561,15 @@ if __name__ == "__main__":
         f.write('\n'.join(user_ids))'''
 
     #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
-
-    sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
+    #sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
+    sta.count_geocoded_tweets()
 
     #sua = SeedUsersAnalyzer(folder_specs["seed users"])
     #sua.collect_tweets_with_phrase("#sgunited")
 
-    #ta = TopicAnalyzer("C:\\Users\\fnatali\\eclipse-workspace\\Twitter-LDA-master\\data")
-    #ta.analyze_coherence_score_of_files("ModelRes/sgu", "Data4Model/sgunited")
+    #ta = TopicAnalyzer("C:\\Users\\fnatali\\eclipse-workspace\\Twitter-LDA-master\\data","sgu_ntopic_25", "sgunited")
+    #ta.analyze_coherence_score_of_files("ModelRes/sgu")
+    #ta.write_phi()
+    #ta.count_number_of_unique_tweets()
+    #ta.prepare_file_for_ldavis()
+    #ta.write_top30_words()
