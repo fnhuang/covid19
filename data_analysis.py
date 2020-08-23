@@ -7,6 +7,8 @@ from pytz import timezone,utc
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 import math, statistics, string
+import numpy as np
+import heapq
 
 
 FOLDER_SPEC = "folder_spec.csv"
@@ -100,8 +102,135 @@ class TopicAnalyzer():
 
         writer.close()
 
+    def write_theta_given_lambda(self, lam):
+        vocabs, top2wrelv_matrix = self.get_word_relevance_in_topic(lam)
+        topic_content = {}
+
+        writer = open(f"{self.topic_folder}/TopicsRelevanceOnUsers.txt","w",encoding="utf8")
+
+        with open(f"{self.topic_folder}/TopicsDistributionOnUsers.txt", "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+
+            #for each file/day/document
+            doc_no = 0
+            for line in lines:
+                topic_dist = [0] * len(top2wrelv_matrix)
+
+                file = line.split("\t")[0].strip()
+                writer.write(f"{file}\t")
+
+                with open(f"{self.data_folder}/{file}", "r", encoding="utf8") as reader:
+                    tweets = reader.readlines()
+
+                    for tweet in tweets:
+                        word_count = {}
+
+                        words = tweet.split(" ")
+                        for word in words:
+                            w = word.strip()
+                            word_count[w] = word_count.get(w, 0) + 1
+
+                        vocab_indices = []
+                        word_arr = []
+                        word_count_arr = []
+                        for word in word_count:
+                            #twitter lda throw 10% of words
+                            if word in vocabs:
+                                vocab_indices.append(vocabs.index(word))
+                                word_arr.append(word)
+                                word_count_arr.append(word_count[word])
+
+                        word_count_arr = np.array([x / sum(word_count_arr) for x in word_count_arr])
+
+                        max_topic = -1
+                        max_relevance = float("-inf")
+                        for top in range(0, len(top2wrelv_matrix)):
+                            wrelv = np.array(top2wrelv_matrix[top])
+                            wrelv = [wrelv[i] for i in vocab_indices]
+
+                            #indices = (-word_count_arr).argsort()[:topwords_num]
+                            relv = sum([word_count_arr[i] * wrelv[i] for i in range(0, len(wrelv))])
+                            if relv > max_relevance:
+                                max_relevance = relv
+                                max_topic = top
+
+                        topic_content[max_topic] = topic_content.get(max_topic, set([]))
+                        topic_content[max_topic].add(tweet.strip())
+                        topic_dist[max_topic] += 1
 
 
+                #sum of topic relevance = 1
+                topic_dist = [topic_dist[i]/sum(topic_dist) for i in range(0, len(topic_dist))]
+
+
+                topic_dist = [str(t) for t in topic_dist]
+                writer.write("\t".join(topic_dist))
+                writer.write("\n")
+                writer.flush()
+
+                doc_no += 1
+                print("\r", end="")
+                print("Processing", doc_no, "out of", len(lines), end="", flush=True)
+
+        writer.close()
+
+        print("Write topic")
+        for topic in topic_content.keys():
+            tweets = topic_content[topic]
+
+            writer = open(f"{self.topic_folder}/topics/{topic}.txt","w",encoding="utf8")
+            for tweet in tweets:
+                writer.write(tweet)
+                writer.write("\n")
+                writer.flush()
+            writer.close()
+
+    def get_word_relevance_in_topic(self, lam):
+        vocabs = self.write_vocab()
+        top2word_matrix = self.write_phi()
+        term_frequency = self.write_term_frequency()
+        term_prob = [x/sum(term_frequency) for x in term_frequency]
+
+        def calculate_relevance(p_wt,p_w):
+            #print(p_w)
+            relevance = lam * math.log(p_wt) + (1-lam) * math.log(p_wt/p_w)
+            return relevance
+
+        writer = open(f"{self.topic_folder}/WordsInTopics_RelvBased.txt", "w", encoding="utf8")
+
+        top2wrelv_matrix = []
+
+        for topic in range(0, len(top2word_matrix)):
+            word_probil = top2word_matrix[topic]
+            relv_probil = [calculate_relevance(word_probil[i], term_prob[i])
+                           for i in range(0, len(word_probil))]
+            top2wrelv_matrix.append(relv_probil)
+
+            writer.write(f"Topic {topic}:")
+
+            for prob,word in sorted(zip(relv_probil, vocabs), reverse=True)[0:30]:
+                writer.write(f"\t{word}\t{prob}")
+                writer.write("\n")
+                writer.flush()
+
+        writer.close()
+
+        return vocabs, top2wrelv_matrix
+
+
+    def _get_words_count(self):
+        word_count = {}
+
+        for file in os.listdir(self.data_folder):
+            with open(f"{self.data_folder}/{file}", "r", encoding="utf8") as reader:
+                lines = reader.readlines()
+                for line in lines:
+                    words = line.split(" ")
+                    for word in words:
+                        w = word.strip()
+                        word_count[w] = word_count.get(w, 0) + 1
+
+        return word_count
 
     def prepare_file_for_ldavis(self):
         self.write_phi()
@@ -112,19 +241,29 @@ class TopicAnalyzer():
 
     def write_term_frequency(self):
         word_file = f"{self.topic_folder}/wordMap.txt"
+        term_freq = []
+        word_count = self._get_words_count()
 
         vocab_file = f"{self.topic_folder}/term_frequency.txt"
         writer = open(vocab_file, "w", encoding="utf8")
         with open(word_file, "r", encoding="utf8") as reader:
             lines = reader.readlines()
             for line in lines:
-                w = line.split("\t")[1].strip()
-                writer.write(w)
+                w = line.split("\t")
+                freq = int(w[1].strip())
+
+                freq = word_count[w[0].strip()]
+                term_freq.append(freq)
+
+                writer.write(str(freq))
                 writer.write("\n")
                 writer.flush()
         writer.close()
 
+        return term_freq
+
     def write_vocab(self):
+        vocabs = []
         word_file = f"{self.topic_folder}/wordMap.txt"
 
         vocab_file = f"{self.topic_folder}/vocab.txt"
@@ -134,9 +273,11 @@ class TopicAnalyzer():
             for line in lines:
                 w = line.split("\t")[0].strip()
                 writer.write(w)
+                vocabs.append(w)
                 writer.write("\n")
                 writer.flush()
         writer.close()
+        return vocabs
 
 
     def write_doc_length(self):
@@ -177,6 +318,8 @@ class TopicAnalyzer():
         phi_file = f"{self.topic_folder}/phi.txt"
         writer = open(phi_file,"w",encoding="utf8")
 
+        top2word_matrix = []
+
         with open(wit_file, "r", encoding="utf8") as reader:
             lines = reader.readlines()
 
@@ -187,16 +330,18 @@ class TopicAnalyzer():
                     if len(topic_dist) > 0:
                         #write word distribution for the current topic into file
                         total = sum(topic_dist.values())
-
+                        top2word_array = []
                         for i in range(0, len(word_list)):
                             p = topic_dist[word_list[i]]
 
                             writer.write(str(p))
+                            top2word_array.append(p)
                             if i < len(word_list) - 1:
                                 writer.write("\t")
                             else:
                                 writer.write("\n")
                         writer.flush()
+                        top2word_matrix.append(top2word_array)
 
                     #create dictionary for a new topic
                     topic_dist = {}
@@ -205,16 +350,21 @@ class TopicAnalyzer():
                     topic_dist[data[0]] = float(data[1])
 
         # write the last topic
+        top2word_array = []
         for i in range(0, len(word_list)):
             p = topic_dist[word_list[i]]
             writer.write(str(p))
+            top2word_array.append(p)
             if i < len(word_list) - 1:
                 writer.write("\t")
             else:
                 writer.write("\n")
         writer.flush()
+        top2word_matrix.append(top2word_array)
+
 
         writer.close()
+        return top2word_matrix
 
 
     def write_theta(self):
@@ -512,7 +662,34 @@ class SeedTweetsAnalyzer():
                 flis_writer.flush()
         flis_writer.close()
 
+    def transform_filtered_tweets_as_raw_input(self, result_folder):
+        dtweet = {}
 
+        # separate tweets based on dates
+        with open("collected_tweets.json","r",encoding="utf8") as reader:
+            for line in reader.readlines():
+                jtweet = json.loads(line)
+
+                dat = datetime.strptime(jtweet["created_at"], "%a %b %d %H:%M:%S %z %Y")
+                dat = dat.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
+                dat = dat.strftime("%Y-%m-%d")
+
+                is_a_retweet,text = self._get_rt_status_if_retweeted(jtweet)
+                dtweet[dat] = dtweet.get(dat,[])
+                dtweet[dat].append(text)
+
+        # perform basic text processing, and transform into a file
+        flis_writer = open("filelist.txt", "w", encoding="utf8")
+        for datstr in dtweet.keys():
+            with open(f"{result_folder}/{datstr}.txt", "w", encoding="utf8") as writer:
+                for tweet in dtweet[datstr]:
+                    toktweet = " ".join(word_tokenize(tweet))
+                    if len(toktweet) > 0:
+                        writer.write(f"{toktweet}\n")
+                        writer.flush()
+                flis_writer.write(f"{datstr}.txt\n")
+                flis_writer.flush()
+        flis_writer.close()
 
 class SeedUsersAnalyzer():
     def __init__(self, seed_users_folder):
@@ -547,6 +724,9 @@ class SeedUsersAnalyzer():
 
         writer.close()
 
+
+
+
 if __name__ == "__main__":
     folder_specs = get_folder_spec()
 
@@ -562,12 +742,15 @@ if __name__ == "__main__":
 
     #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
     #sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
-    sta.count_geocoded_tweets()
+    sta.transform_filtered_tweets_as_raw_input("raw_input")
+    #sta.count_geocoded_tweets()
 
     #sua = SeedUsersAnalyzer(folder_specs["seed users"])
     #sua.collect_tweets_with_phrase("#sgunited")
 
     #ta = TopicAnalyzer("C:\\Users\\fnatali\\eclipse-workspace\\Twitter-LDA-master\\data","sgu_ntopic_25", "sgunited")
+    #ta.write_theta_given_lambda(0.4)
+    #ta.get_word_relevance_in_topic(0.4)
     #ta.analyze_coherence_score_of_files("ModelRes/sgu")
     #ta.write_phi()
     #ta.count_number_of_unique_tweets()
