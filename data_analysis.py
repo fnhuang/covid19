@@ -445,14 +445,16 @@ class SeedTweetsAnalyzer():
 
     def _get_rt_status_if_retweeted(self, jtweet):
         is_a_retweet = False
+        source = -1
 
         if "retweeted_status" in jtweet.keys():
             text = self._get_tweet_from_json(jtweet["retweeted_status"])
+            source = jtweet["retweeted_status"]["user"]["id_str"]
             is_a_retweet = True
         else:
             text = self._get_tweet_from_json(jtweet)
 
-        return is_a_retweet,text
+        return is_a_retweet,source,text
 
     def _get_tweet_from_json(self, json_obj):
         if "full_text" in json_obj.keys():
@@ -554,17 +556,16 @@ class SeedTweetsAnalyzer():
         ctwriter = csv.writer(tweets_file)
         cuwriter = csv.writer(users_file)
 
-        ctwriter.writerow(["status_id","date_sgtime","text","is_a_retweet","retweets","likes","user_id"])
+        ctwriter.writerow(["status_id","date_sgtime","text","is_a_retweet","source","retweets","likes","user_id"])
         cuwriter.writerow(["user_id","user_name","user_location","followers","followees","tweets","favourites","lists","created_at_sgtime"])
 
         with open("collected_tweets.json","r",encoding="utf8") as reader:
             for line in reader.readlines():
                 jtweet = json.loads(line)
-                is_a_retweet = False
 
                 status_id = jtweet["id_str"]
 
-                is_a_retweet,text = self._get_rt_status_if_retweeted(jtweet)
+                is_a_retweet,source,text = self._get_rt_status_if_retweeted(jtweet)
 
                 created_at = datetime.strptime(jtweet["created_at"], "%a %b %d %H:%M:%S %z %Y")
                 created_at = created_at.replace(tzinfo=utc).astimezone(tz=timezone("Asia/Singapore"))
@@ -573,7 +574,7 @@ class SeedTweetsAnalyzer():
                 likes = jtweet["favorite_count"]
                 user_id = jtweet["user"]["id"]
 
-                ctwriter.writerow([status_id, date_str, text, is_a_retweet, retweets, likes, user_id])
+                ctwriter.writerow([status_id, date_str, text, is_a_retweet, source, retweets, likes, user_id])
                 tweets_file.flush()
 
                 if user_id not in users:
@@ -725,7 +726,31 @@ class SeedUsersAnalyzer():
         writer.close()
 
 
+class FinalDataPrep():
+    def prepare_topic_file(self):
+        writer = open("topics_tableau.csv","w",encoding="utf8")
+        writer.write("date,first_topic,first_pct,second_topic,second_pct,third_topic,third_pct\n")
 
+        with open("TopicsRelevanceOnUsers.txt", "r", encoding="utf8") as reader:
+            lines = reader.readlines()
+            for line in lines:
+                datas = line.split("\t")
+                date = datas[0].replace(".txt","")
+
+                probs = []
+                for data in datas[1:]:
+                    probs.append(float(data))
+
+                indices = np.array(probs).argsort()[-3:][::-1]
+
+                writer.write(f"{date},{indices[0]},{probs[indices[0]]},{indices[1]},"
+                             f"{probs[indices[1]]},{indices[2]},{probs[indices[2]]}\n")
+                writer.flush()
+
+        writer.close()
+
+    '''def prepare_tweets_file(self):
+        with open("tweets.csv", )'''
 
 if __name__ == "__main__":
     folder_specs = get_folder_spec()
@@ -740,9 +765,9 @@ if __name__ == "__main__":
     with open('seed_user_ids.txt', 'w') as f:
         f.write('\n'.join(user_ids))'''
 
-    #sta.transform_filtered_tweets_into_csv("collected_tweets.json")
+    sta.transform_filtered_tweets_into_csv("collected_tweets.json")
     #sta.transform_filtered_tweets_as_TLDA_input("tlda_input")
-    sta.transform_filtered_tweets_as_raw_input("raw_input")
+    #sta.transform_filtered_tweets_as_raw_input("raw_input")
     #sta.count_geocoded_tweets()
 
     #sua = SeedUsersAnalyzer(folder_specs["seed users"])
@@ -756,3 +781,6 @@ if __name__ == "__main__":
     #ta.count_number_of_unique_tweets()
     #ta.prepare_file_for_ldavis()
     #ta.write_top30_words()
+
+    #fdp = FinalDataPrep()
+    #fdp.prepare_topic_file()
